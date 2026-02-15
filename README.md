@@ -48,7 +48,6 @@
 diffusion/
 │
 ├── external/                 # 上游开源仓库（git submodule）
-│   ├── MobileDiffusion/
 │   ├── SANA/
 │   ├── SANA-Sprint/
 │
@@ -85,31 +84,33 @@ diffusion/
 
 🔬 第一阶段：Baseline 复现
 
-1️⃣ 复现 MobileDiffusion
+1️⃣ 复现 SANA（1K & 4K）
 
 目标：
-	•	复现 512×512 单步推理
-	•	拆解延迟结构（UNet / Decoder / 其它）
-	•	分析端侧结构设计
+	•	复现 1024×1024 推理（先跑通最小可用链路）
+	•	测试原生 4K 推理（重点测 token/latents 扩展规律）
+	•	分析 latent 压缩倍率对 token 数与显存/耗时的影响
+	•	测量 4K 下 AE 编码/解码成本（判断瓶颈是否在 decoder）
 
 ⸻
 
-2️⃣ 复现 SANA（1K & 4K）
+2️⃣ 复现 SANA-Sprint（单步）
 
 目标：
-	•	复现 1024×1024 推理
-	•	测试原生 4K 推理
-	•	分析 latent 压缩倍率对 token 数的影响
-	•	测量 4K 下 AE 编码与解码成本
+	•	复现 1-step / 少步推理（与 SANA 共享 AE/主干时优先复用）
+	•	对比蒸馏策略对「单步质量 vs 速度」的影响（以推理为主，不纠结训练细节）
+	•	形成 1K 单步端到端 profiling 模板（后续 raw→rgb 直接复用）
 
 ⸻
 
-3️⃣ 复现 SANA-Sprint
+3️⃣ MobileDiffusion（论文复刻 / 关键 trick 萃取）
 
-目标：
-	•	复现 1-step 1024 推理
-	•	对比一致性蒸馏与 GAN-style 蒸馏
-	•	分析单步结构质量与速度平衡
+说明：
+	•	MobileDiffusion 论文中训练数据为“proprietary dataset（1.5 亿图文对）”，并未提供官方开源训练仓库与可复现权重，因此本项目不以“完整复现 MobileDiffusion”为硬性里程碑。
+	•	我们把它当作端侧优化的 trick 清单来源：UNet 架构瘦身、注意力拆分（高分辨率去 SA 留 CA）、separable conv、激活函数替换（gelu→swish）、softmax→relu attention 微调、decoder 轻量化等。
+
+落地目标：
+	•	在可获取的开源基线（SANA / Sprint / SD 生态）上，逐项实现并验证上述 trick 的收益（以 profiling 数据为准）。
 
 ⸻
 
@@ -188,7 +189,7 @@ Latent 压缩倍率:
 📌 当前进度
 
 模块	状态
-MobileDiffusion baseline	⬜
+MobileDiffusion trick 复刻（paper）	⬜
 SANA 1K baseline	⬜
 SANA 4K baseline	⬜
 Sprint 单步 baseline	⬜
