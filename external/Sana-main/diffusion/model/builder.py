@@ -22,8 +22,9 @@ import torch
 import torch.nn.functional as F
 from diffusers import AutoencoderDC
 from diffusers.models import AutoencoderKL
-from mmcv import Registry
 from termcolor import colored
+
+from diffusion.utils.mmcv_compat import Registry
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -38,7 +39,10 @@ from transformers import logging as transformers_logging
 
 from diffusion.data.datasets.video.sana_video_data import SanaZipDataset
 from diffusion.model.dc_ae.efficientvit.ae_model_zoo import DCAE_HF, DCAEWithTemporal_HF
-from diffusion.model.qwen.qwen_vl import QwenVLEmbedder
+try:
+    from diffusion.model.qwen.qwen_vl import QwenVLEmbedder
+except ImportError:
+    QwenVLEmbedder = None
 from diffusion.model.utils import set_fp32_attention, set_grad_checkpoint
 from diffusion.model.wan2_2.vae import Wan2_2_VAE
 from diffusion.model.wan.clip import CLIPModel
@@ -91,6 +95,8 @@ def get_tokenizer_and_text_encoder(name="T5", device="cuda"):
             .to(device)
         )
     elif "Qwen" in name:
+        if QwenVLEmbedder is None:
+            raise ImportError("Qwen VL models require qwen-vl-utils. Install with: pip install qwen-vl-utils")
         text_handler = QwenVLEmbedder(model_id=text_encoder_dict[name], device=device)
         return None, text_handler
     else:
@@ -326,12 +332,34 @@ def vae_decode(name, vae, latent):
     elif "AutoencoderDC" in name:
         ae = vae
         scaling_factor = ae.config.scaling_factor if ae.config.scaling_factor else 0.41407
+        # Proactively enable tiling for 4K images or when on MPS (Mac) to avoid tensor size limits
+        latent_h, latent_w = latent.shape[-2], latent.shape[-1]
+        image_h, image_w = latent_h * 32, latent_w * 32  # 32x upsampling
+        is_4k = image_h >= 4096 or image_w >= 4096
+        is_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        use_tiling = is_4k or is_mps
+        if use_tiling:
+            ae.enable_tiling(tile_sample_min_height=1024, tile_sample_min_width=1024)
         try:
             samples = ae.decode(latent / scaling_factor, return_dict=False)[0]
-        except torch.cuda.OutOfMemoryError as e:
-            print("Warning: Ran out of memory when regular VAE decoding, retrying with tiled VAE decoding.")
-            ae.enable_tiling(tile_sample_min_height=1024, tile_sample_min_width=1024)
-            samples = ae.decode(latent / scaling_factor, return_dict=False)[0]
+        except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+            # Handle CUDA OOM or MPS tensor size limit errors
+            error_str = str(e)
+            is_oom_error = (
+                "OutOfMemory" in error_str or 
+                "MPSGaph" in error_str or 
+                "tensor dims larger" in error_str or
+                isinstance(e, torch.cuda.OutOfMemoryError)
+            )
+            if is_oom_error:
+                if not use_tiling:
+                    print("Warning: VAE decode failed, retrying with tiled VAE decoding.")
+                    ae.enable_tiling(tile_sample_min_height=1024, tile_sample_min_width=1024)
+                    samples = ae.decode(latent / scaling_factor, return_dict=False)[0]
+                else:
+                    raise
+            else:
+                raise
     elif "WanVAE" in name:
         samples = vae.decode(latent)
     elif "Wan2_2_VAE" in name:

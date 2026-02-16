@@ -216,7 +216,8 @@ def visualize(config, args, model, items, bs, sample_steps, cfg_scale, pag_scale
 
         samples = samples.to(vae_dtype)
         samples = vae_decode(config.vae.vae_type, vae, samples)
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         os.umask(0o000)
         for i, sample in enumerate(samples):
@@ -272,8 +273,14 @@ if __name__ == "__main__":
         print(f"custom_image_size: {args.image_size}")
 
     set_env(args.seed, args.image_size // config.vae.vae_downsample_rate)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        device = "mps"  # Apple Silicon GPU
+    else:
+        device = "cpu"
     logger = get_root_logger()
+    logger.info(f"Using device: {device}")
 
     # only support fixed latent size currently
     latent_size = args.image_size // config.vae.vae_downsample_rate

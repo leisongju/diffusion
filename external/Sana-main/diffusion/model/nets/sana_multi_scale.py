@@ -285,15 +285,16 @@ class SanaMS(Sana):
 
         if self.pos_embed_type == "sincos":
             if self.pos_embed_ms is None or self.pos_embed_ms.shape[1:] != x.shape[1:]:
+                pos_embed_np = get_2d_sincos_pos_embed(
+                    self.pos_embed.shape[-1],
+                    (self.h, self.w),
+                    pe_interpolation=self.pe_interpolation,
+                    base_size=self.base_size,
+                )
+                # float32 first: MPS does not support float64
                 self.pos_embed_ms = (
-                    torch.from_numpy(
-                        get_2d_sincos_pos_embed(
-                            self.pos_embed.shape[-1],
-                            (self.h, self.w),
-                            pe_interpolation=self.pe_interpolation,
-                            base_size=self.base_size,
-                        )
-                    )
+                    torch.from_numpy(pos_embed_np)
+                    .float()
                     .unsqueeze(0)
                     .to(x.device)
                     .to(self.dtype)

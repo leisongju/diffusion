@@ -20,7 +20,10 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.batchnorm import _BatchNorm
 
-from ...models.nn.triton_rms_norm import TritonRMSNorm2dFunc
+try:
+    from ...models.nn.triton_rms_norm import TritonRMSNorm2dFunc
+except ImportError:
+    TritonRMSNorm2dFunc = None
 from ...models.utils import build_kwargs_from_config
 
 __all__ = ["LayerNorm2d", "TritonRMSNorm2d", "build_norm", "reset_bn", "set_norm_eps"]
@@ -41,6 +44,11 @@ class TritonRMSNorm2d(nn.LayerNorm):
         nn.init.constant_(self.bias, 0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if TritonRMSNorm2dFunc is None:
+            # PyTorch fallback when triton is not available (e.g. Mac)
+            rms = torch.sqrt(torch.square(x.float()).mean(dim=1, keepdim=True) + self.eps)
+            out = (x.float() / rms).to(x.dtype) * self.weight.view(1, -1, 1, 1) + self.bias.view(1, -1, 1, 1)
+            return out
         input_numel = x.numel()
         if input_numel >= 1 << 31:
             num_chunks = (input_numel - 1) // (1 << 31) + 1

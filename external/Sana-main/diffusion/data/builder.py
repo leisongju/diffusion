@@ -18,7 +18,7 @@ import os
 import time
 
 import torch.utils.data
-from mmcv import Registry, build_from_cfg
+from diffusion.utils.mmcv_compat import Registry, build_from_cfg
 from termcolor import colored
 from torch.utils.data import DataLoader
 

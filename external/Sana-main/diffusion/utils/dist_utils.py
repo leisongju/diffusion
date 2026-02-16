@@ -23,10 +23,17 @@ import os
 import pickle
 import shutil
 
-import mmcv
 import torch
 import torch.distributed as dist
-from mmcv.runner import get_dist_info
+
+try:
+    import mmcv
+    from mmcv.runner import get_dist_info
+except ImportError:
+    mmcv = None
+
+    def get_dist_info():
+        return (get_rank(), get_world_size())
 
 
 def is_distributed():
@@ -188,23 +195,33 @@ def all_gather_cpu(result_part, tmpdir=None, collect_by_master=True):
     if tmpdir is None:
         tmpdir = "./tmp"
     if rank == 0:
-        mmcv.mkdir_or_exist(tmpdir)
+        if mmcv is not None:
+            mmcv.mkdir_or_exist(tmpdir)
+        else:
+            os.makedirs(tmpdir, exist_ok=True)
     synchronize()
     # dump the part result to the dir
-    mmcv.dump(result_part, os.path.join(tmpdir, f"part_{rank}.pkl"))
+    part_file = os.path.join(tmpdir, f"part_{rank}.pkl")
+    if mmcv is not None:
+        mmcv.dump(result_part, part_file)
+    else:
+        with open(part_file, "wb") as f:
+            pickle.dump(result_part, f)
     synchronize()
     # collect all parts
     if collect_by_master and rank != 0:
         return None
     else:
-        # load results of all parts from tmp dir
         results = []
         for i in range(world_size):
             part_file = os.path.join(tmpdir, f"part_{i}.pkl")
-            results.append(mmcv.load(part_file))
+            if mmcv is not None:
+                results.append(mmcv.load(part_file))
+            else:
+                with open(part_file, "rb") as f:
+                    results.append(pickle.load(f))
     if not collect_by_master:
         synchronize()
-    # remove tmp dir
     if rank == 0:
         shutil.rmtree(tmpdir)
     return results

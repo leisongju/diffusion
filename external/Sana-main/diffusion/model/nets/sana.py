@@ -393,20 +393,21 @@ class Sana(nn.Module):
         nn.init.normal_(self.y_embedder.y_proj.fc1.weight, std=0.02)
         nn.init.normal_(self.y_embedder.y_proj.fc2.weight, std=0.02)
 
-        # load null embed
-        try:
-            null_embed = torch.load(self.null_embed_path, map_location="cpu")
-            self.y_embedder.y_embedding.data = null_embed["uncond_prompt_embeds"][0]
-            if get_rank() == 0:
-                self.logger(colored(f"Load null embed from {self.null_embed_path}....", "green"))
-        except Exception as e:
-            if get_rank() == 0:
-                self.logger(
-                    colored(
-                        f"Failed to load null embed from {self.null_embed_path}....{e}. Ignore the error during inference",
-                        "red",
+        # load null embed (optional: pre-computed unconditional text embedding for slightly faster inference)
+        if self.null_embed_path is not None:
+            try:
+                null_embed = torch.load(self.null_embed_path, map_location="cpu")
+                self.y_embedder.y_embedding.data = null_embed["uncond_prompt_embeds"][0]
+                if get_rank() == 0:
+                    self.logger(colored(f"Load null embed from {self.null_embed_path}....", "green"))
+            except Exception as e:
+                if get_rank() == 0:
+                    self.logger(
+                        colored(
+                            f"Failed to load null embed from {self.null_embed_path}....{e}. Ignore the error during inference",
+                            "red",
+                        )
                     )
-                )
 
     @property
     def dtype(self):
