@@ -82,6 +82,18 @@ def get_tokenizer_and_text_encoder(name="T5", device="cuda"):
         "Qwen2-5-VL-3B-Instruct": "Qwen/Qwen2.5-VL-3B-Instruct",
         "Qwen2-5-VL-7B-Instruct": "Qwen/Qwen2.5-VL-7B-Instruct",
     }
+    # 支持本地路径：若 name 为已存在的目录则从本地加载（按 gemma 方式，与 Sana 4K/1024 一致）
+    if (name.startswith("/") or name.startswith(".")) and os.path.isdir(name):
+        path = os.path.abspath(name)
+        print(colored(f"[Text Encoder] Loading from local path: {path}", attrs=["bold"]))
+        tokenizer = AutoTokenizer.from_pretrained(path)
+        tokenizer.padding_side = "right"
+        text_encoder = (
+            AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16)
+            .get_decoder()
+            .to(device)
+        )
+        return tokenizer, text_encoder
     assert name in list(text_encoder_dict.keys()), f"not support this text encoder: {name}"
     if "T5" in name:
         tokenizer = T5Tokenizer.from_pretrained(text_encoder_dict[name])
